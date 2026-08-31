@@ -1,4 +1,4 @@
-import { Fillup, Vehicle, FuelGoals } from '../types';
+import { Fillup, Vehicle, FuelGoals, ServiceRecord } from '../types';
 
 const DEMO_UID = 'demo-user';
 
@@ -20,6 +20,79 @@ export const DEMO_VEHICLES: Vehicle[] = [
     fuelType: 'Petrol',
     tankCapacity: 37,
     createdAt: daysAgo(400),
+  },
+  {
+    id: 'v-classic350',
+    userId: DEMO_UID,
+    name: 'Classic 350',
+    make: 'Royal Enfield',
+    model: 'Classic 350',
+    plate: 'TN 22 CH 8811',
+    fuelType: 'Petrol',
+    tankCapacity: 13,
+    createdAt: daysAgo(280),
+  },
+];
+
+export const DEMO_SERVICES: ServiceRecord[] = [
+  {
+    id: 's-oil-1',
+    userId: DEMO_UID,
+    vehicleId: 'v-baleno',
+    type: 'Oil change',
+    date: daysAgo(85, 10),
+    odometer: 21996,
+    cost: 3800,
+    workshop: 'Nexa Adyar',
+    reminderIntervalMonths: 6,
+    reminderIntervalKm: 10000,
+    nextDueDate: daysAgo(-95, 10),           // ~3 months out
+    nextDueOdometer: 31996,
+  },
+  {
+    id: 's-tyre-1',
+    userId: DEMO_UID,
+    vehicleId: 'v-baleno',
+    type: 'Tyre rotation',
+    date: daysAgo(52, 11),
+    odometer: 23795,
+    cost: 400,
+    workshop: 'MRF Anna Nagar',
+    reminderIntervalKm: 10000,
+    nextDueOdometer: 33795,
+  },
+  {
+    id: 's-puc-1',
+    userId: DEMO_UID,
+    vehicleId: 'v-baleno',
+    type: 'PUC',
+    date: daysAgo(345, 14),
+    cost: 100,
+    reminderIntervalMonths: 12,
+    nextDueDate: daysAgo(-15, 14),           // ~15 days from now - due soon
+  },
+  {
+    id: 's-ins-1',
+    userId: DEMO_UID,
+    vehicleId: 'v-baleno',
+    type: 'Insurance',
+    date: daysAgo(180, 15),
+    cost: 18200,
+    workshop: 'ICICI Lombard',
+    reminderIntervalMonths: 12,
+    nextDueDate: daysAgo(-185, 15),          // ~6 months away
+  },
+  {
+    id: 's-oil-2',
+    userId: DEMO_UID,
+    vehicleId: 'v-classic350',
+    type: 'Oil change',
+    date: daysAgo(45, 16),
+    odometer: 8420,
+    cost: 900,
+    workshop: 'Royal Enfield Service',
+    reminderIntervalKm: 3000,
+    nextDueOdometer: 11420,
   },
 ];
 

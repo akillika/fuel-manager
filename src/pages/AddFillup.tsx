@@ -8,23 +8,49 @@ import { Fillup } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
 import { Button, Input, Field, Textarea, IconClose, cx } from '../components/ui';
+import { useVehicle } from '../contexts/VehicleContext';
+
+/**
+ * Parses a bank / UPI style SMS and extracts what it can.
+ * Looks for a rupee amount and a station-ish string.
+ */
+function parseSMS(text: string) {
+  const out: { total?: number; station?: string } = {};
+  const rs = text.match(/(?:Rs\.?|INR|₹)\s?([0-9,]+(?:\.[0-9]{1,2})?)/i);
+  if (rs) out.total = Number(rs[1].replace(/,/g, ''));
+  const at = text.match(/at\s+([A-Z][A-Z0-9 &.'/-]{2,30})/);
+  if (at) out.station = at[1].trim().replace(/\s{2,}/g, ' ');
+  const dot = text.match(/(?:paid|debited|spent|payment).*?(?:to|at)\s+([A-Za-z][A-Za-z0-9 &.'/-]{2,30})/i);
+  if (!at && dot) out.station = dot[1].trim();
+  return out;
+}
 
 export default function AddFillup() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const editId = sp.get('edit');
+  const prefillType = sp.get('type');
   const { user } = useAuth();
+  const { activeVehicleId, vehicles } = useVehicle();
 
   const [previousFillups, setPreviousFillups] = useState<Fillup[]>([]);
+  const [vehicleId, setVehicleId] = useState<string>(activeVehicleId);
   const [date, setDate] = useState<Date>(new Date());
   const [odometer, setOdometer] = useState<string>('');
   const [volume, setVolume] = useState<string>('');
   const [pricePerLitre, setPricePerLitre] = useState<string>('');
+  const [total, setTotal] = useState<string>('');
+  const [lastEdited, setLastEdited] = useState<'volume' | 'price' | 'total'>('total');
   const [station, setStation] = useState<string>('');
   const [fuelGrade, setFuelGrade] = useState<string>('Petrol');
   const [isFull, setIsFull] = useState(true);
   const [notes, setNotes] = useState('');
+  const [tag, setTag] = useState<'personal' | 'work'>('personal');
   const [saving, setSaving] = useState(false);
+  const [showSms, setShowSms] = useState(false);
+  const [smsText, setSmsText] = useState('');
+
+  useEffect(() => { setVehicleId(activeVehicleId); }, [activeVehicleId]);
 
   useEffect(() => {
     if (!user) return;
@@ -37,30 +63,88 @@ export default function AddFillup() {
     })();
   }, [user]);
 
-  // Load edit target
-  useEffect(() => {
-    if (!editId) return;
-    const f = previousFillups.find(x => x.id === editId);
-    if (!f) return;
-    setDate(f.date);
-    setOdometer(String(f.odometer));
-    setVolume(f.volume.toFixed(2));
-    setPricePerLitre(f.pricePerLitre.toFixed(2));
-    setStation(f.station || '');
-    setFuelGrade(f.fuelGrade || 'Petrol');
-    setIsFull(f.isFull);
-    setNotes(f.notes || '');
-  }, [editId, previousFillups]);
+  // Prefill smart defaults - runs once when previous fill-ups load and we're not editing
+  const vehicleFillups = useMemo(
+    () => previousFillups.filter(f => f.vehicleId === vehicleId).sort((a, b) => a.date.getTime() - b.date.getTime()),
+    [previousFillups, vehicleId],
+  );
 
-  const parsedOdo = Number(odometer) || 0;
+  useEffect(() => {
+    if (editId) return;
+    if (vehicleFillups.length === 0) return;
+    const last = vehicleFillups[vehicleFillups.length - 1];
+    if (!odometer) {
+      // Estimate km/day from the last 5 full-tank fills
+      const recent = vehicleFillups.filter(f => f.isFull).slice(-5);
+      let kmPerDay = 50;
+      if (recent.length >= 2) {
+        const first = recent[0];
+        const lastR = recent[recent.length - 1];
+        const days = Math.max(1, (lastR.date.getTime() - first.date.getTime()) / (1000 * 60 * 60 * 24));
+        const km = lastR.odometer - first.odometer;
+        kmPerDay = km / days;
+      }
+      const now = new Date();
+      const daysSince = Math.max(1, (now.getTime() - last.date.getTime()) / (1000 * 60 * 60 * 24));
+      const estimate = Math.round(last.odometer + kmPerDay * daysSince);
+      setOdometer(String(estimate));
+    }
+    if (!pricePerLitre) setPricePerLitre(last.pricePerLitre.toFixed(2));
+    if (!station && last.station) setStation(last.station);
+    if (!fuelGrade && last.fuelGrade) setFuelGrade(last.fuelGrade);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleFillups, editId]);
+
+  useEffect(() => {
+    if (prefillType && !editId) setFuelGrade(prefillType);
+  }, [prefillType, editId]);
+
+  // Reverse-solve: fill the missing one of (volume, price, total)
   const parsedVol = Number(volume) || 0;
   const parsedPrice = Number(pricePerLitre) || 0;
-  const total = Number((parsedVol * parsedPrice).toFixed(2));
+  const parsedTotal = Number(total) || 0;
 
-  // Compute inferred mileage since last full fill
+  useEffect(() => {
+    // When any two are filled, compute the third and set into state
+    const filled = [parsedVol > 0, parsedPrice > 0, parsedTotal > 0].filter(Boolean).length;
+    if (filled < 2) return;
+    if (lastEdited === 'volume' || lastEdited === 'price') {
+      if (parsedVol > 0 && parsedPrice > 0) {
+        const t = Number((parsedVol * parsedPrice).toFixed(2));
+        if (Math.abs(t - parsedTotal) > 0.01) setTotal(String(t));
+      }
+    } else if (lastEdited === 'total') {
+      if (parsedTotal > 0 && parsedVol > 0 && (!parsedPrice || Math.abs(parsedVol * parsedPrice - parsedTotal) > 0.01)) {
+        setPricePerLitre((parsedTotal / parsedVol).toFixed(2));
+      } else if (parsedTotal > 0 && parsedPrice > 0 && (!parsedVol || Math.abs(parsedVol * parsedPrice - parsedTotal) > 0.01)) {
+        setVolume((parsedTotal / parsedPrice).toFixed(2));
+      }
+    }
+  }, [parsedVol, parsedPrice, parsedTotal, lastEdited]);
+
+  useEffect(() => {
+    if (editId) {
+      const f = previousFillups.find(x => x.id === editId);
+      if (!f) return;
+      setVehicleId(f.vehicleId);
+      setDate(f.date);
+      setOdometer(String(f.odometer));
+      setVolume(f.volume.toFixed(2));
+      setPricePerLitre(f.pricePerLitre.toFixed(2));
+      setTotal(f.totalCost.toFixed(2));
+      setStation(f.station || '');
+      setFuelGrade(f.fuelGrade || 'Petrol');
+      setIsFull(f.isFull);
+      setNotes(f.notes || '');
+      if (f.tag) setTag(f.tag);
+    }
+  }, [editId, previousFillups]);
+
+  // Compute inferred mileage since last full fill on this vehicle
   const inferred = useMemo(() => {
+    const parsedOdo = Number(odometer) || 0;
     if (!isFull || parsedOdo <= 0 || parsedVol <= 0) return null;
-    const asc = [...previousFillups]
+    const asc = vehicleFillups
       .filter(f => f.id !== editId && f.date.getTime() < date.getTime())
       .sort((a, b) => a.date.getTime() - b.date.getTime());
     let lastFull: Fillup | null = null;
@@ -74,27 +158,29 @@ export default function AddFillup() {
     const volumeTotal = parsedVol + interimVolume;
     if (distance <= 0 || volumeTotal <= 0) return null;
     return { distance, mileage: distance / volumeTotal };
-  }, [isFull, parsedOdo, parsedVol, previousFillups, date, editId]);
+  }, [isFull, odometer, parsedVol, vehicleFillups, date, editId]);
 
   const cancel = () => navigate('/');
 
   const save = async () => {
     if (!user) return alert('Sign in first.');
+    const parsedOdo = Number(odometer) || 0;
     if (!parsedOdo) return alert('Odometer is required.');
     if (!parsedVol) return alert('Volume is required.');
     if (!parsedPrice) return alert('Price per litre is required.');
-    if (DEMO_MODE) { alert('Demo mode: writes disabled. Real data will save in production.'); navigate('/'); return; }
+    if (DEMO_MODE) { alert('Demo mode: writes disabled.'); navigate('/'); return; }
     try {
       setSaving(true);
       const data: any = {
         userId: user.uid,
-        vehicleId: 'default',
+        vehicleId,
         date: Timestamp.fromDate(date),
         odometer: parsedOdo,
         volume: parsedVol,
         pricePerLitre: parsedPrice,
-        totalCost: total,
+        totalCost: Number((parsedVol * parsedPrice).toFixed(2)),
         isFull,
+        tag,
       };
       if (station.trim()) data.station = station.trim();
       if (fuelGrade.trim()) data.fuelGrade = fuelGrade.trim();
@@ -110,6 +196,13 @@ export default function AddFillup() {
     }
   };
 
+  const applySms = () => {
+    const parsed = parseSMS(smsText);
+    if (parsed.total) { setTotal(String(parsed.total)); setLastEdited('total'); }
+    if (parsed.station) setStation(parsed.station);
+    setShowSms(false);
+  };
+
   return (
     <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-6 md:py-10 rise pb-32 md:pb-6">
       <div className="flex items-baseline justify-between mb-6 md:mb-8">
@@ -120,15 +213,60 @@ export default function AddFillup() {
         <button onClick={cancel} className="inline-flex items-center justify-center w-9 h-9 rounded-md text-ink3 hover:text-ink hover:bg-card2 transition-colors" aria-label="Cancel"><IconClose /></button>
       </div>
 
-      {/* Live summary strip - sticks near the top on mobile so it stays visible while filling the form */}
+      {/* Live summary strip */}
       <div className="sticky top-14 z-10 md:relative md:top-0 -mx-4 md:mx-0 px-4 md:px-0 pb-3 md:pb-0 md:mb-6 bg-bg/95 backdrop-blur md:bg-transparent md:backdrop-blur-none">
       <div className="border border-rule rounded-lg bg-card p-4 md:p-5">
-        <div className="grid grid-cols-3 gap-4">
-          <SummaryStat label="Total" value={parsedPrice && parsedVol ? `₹${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'} sub={parsedPrice ? `${parsedVol.toFixed(1)} L × ₹${parsedPrice.toFixed(2)}` : ' '} />
+        <div className="grid grid-cols-3 gap-3 md:gap-4">
+          <SummaryStat label="Total" value={parsedTotal ? `₹${parsedTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'} sub={parsedPrice && parsedVol ? `${parsedVol.toFixed(1)} L × ₹${parsedPrice.toFixed(2)}` : ' '} />
           <SummaryStat label="Distance" value={inferred ? `${inferred.distance.toLocaleString('en-IN')} km` : '—'} sub="since last full" />
           <SummaryStat label="Mileage" value={inferred ? inferred.mileage.toFixed(1) : '—'} sub="km/L" />
         </div>
       </div>
+      </div>
+
+      {/* Vehicle picker (only if more than one) */}
+      {vehicles.length > 1 && (
+        <div className="mb-5">
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-1.5">Vehicle</div>
+          <div className="flex items-center gap-1 border border-rule rounded-md p-0.5 bg-card">
+            {vehicles.map(v => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setVehicleId(v.id)}
+                className={cx('h-8 px-3 rounded text-xs font-medium transition-colors flex-1', vehicleId === v.id ? 'bg-card2 text-ink' : 'text-ink3 hover:text-ink')}
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SMS parser */}
+      <div className="mb-5">
+        <button
+          type="button"
+          onClick={() => setShowSms(v => !v)}
+          className="text-xs text-ink3 hover:text-ink underline underline-offset-2 decoration-dotted"
+        >
+          {showSms ? 'Hide SMS import' : 'Paste bank/UPI SMS to auto-fill'}
+        </button>
+        {showSms && (
+          <div className="mt-2 border border-rule rounded-md bg-card p-3">
+            <Textarea
+              value={smsText}
+              onChange={(e) => setSmsText(e.target.value)}
+              rows={2}
+              placeholder="Rs.1240.00 debited from a/c...at INDIAN OIL CORP..."
+              className="!bg-card2 !border-transparent"
+            />
+            <div className="flex justify-end mt-2 gap-2">
+              <Button size="sm" onClick={() => setShowSms(false)}>Cancel</Button>
+              <Button size="sm" variant="primary" onClick={applySms}>Extract</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-5">
@@ -140,7 +278,7 @@ export default function AddFillup() {
               onChange={(e) => setDate(new Date(e.target.value))}
             />
           </Field>
-          <Field label="Odometer (km)">
+          <Field label="Odometer (km)" hint={vehicleFillups.length > 0 ? 'Prefilled from your usual km/day' : undefined}>
             <Input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} placeholder="e.g. 26550" />
           </Field>
           <Field label="Fuel grade">
@@ -159,16 +297,28 @@ export default function AddFillup() {
           </Field>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Volume (L)">
-            <Input type="number" inputMode="decimal" step="0.01" value={volume} onChange={(e) => setVolume(e.target.value)} placeholder="e.g. 32.10" />
-          </Field>
-          <Field label="Price per litre (₹)">
-            <Input type="number" inputMode="decimal" step="0.01" value={pricePerLitre} onChange={(e) => setPricePerLitre(e.target.value)} placeholder="e.g. 96.30" />
-          </Field>
-          <Field label="Total (₹)" hint="Computed">
-            <Input type="text" readOnly value={total.toLocaleString('en-IN', { maximumFractionDigits: 2 })} className="!bg-card2" />
-          </Field>
+        <div>
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-1.5">Volume, price & total <span className="normal-case tracking-normal text-ink4 font-normal">— fill any two, the third is computed</span></div>
+          <div className="grid grid-cols-3 gap-2">
+            <Input
+              type="number" inputMode="decimal" step="0.01"
+              value={volume}
+              onChange={(e) => { setVolume(e.target.value); setLastEdited('volume'); }}
+              placeholder="Litres"
+            />
+            <Input
+              type="number" inputMode="decimal" step="0.01"
+              value={pricePerLitre}
+              onChange={(e) => { setPricePerLitre(e.target.value); setLastEdited('price'); }}
+              placeholder="₹/L"
+            />
+            <Input
+              type="number" inputMode="decimal" step="0.01"
+              value={total}
+              onChange={(e) => { setTotal(e.target.value); setLastEdited('total'); }}
+              placeholder="Total ₹"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -178,25 +328,19 @@ export default function AddFillup() {
           <div>
             <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-1.5">Fill type</div>
             <div className="inline-flex bg-card2 border border-rule rounded-md p-0.5 h-9">
-              <button
-                type="button"
-                onClick={() => setIsFull(true)}
-                className={cx('h-full px-3 rounded text-xs font-medium transition-colors', isFull ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}
-              >
-                Full tank
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsFull(false)}
-                className={cx('h-full px-3 rounded text-xs font-medium transition-colors', !isFull ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}
-              >
-                Partial
-              </button>
+              <button type="button" onClick={() => setIsFull(true)} className={cx('h-full px-3 rounded text-xs font-medium transition-colors', isFull ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}>Full tank</button>
+              <button type="button" onClick={() => setIsFull(false)} className={cx('h-full px-3 rounded text-xs font-medium transition-colors', !isFull ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}>Partial</button>
             </div>
-            <p className="text-2xs text-ink3 mt-1.5">
-              Mileage math only runs on full-tank fills.
-            </p>
           </div>
+        </div>
+
+        <div>
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-1.5">Tag</div>
+          <div className="inline-flex bg-card2 border border-rule rounded-md p-0.5 h-9">
+            <button type="button" onClick={() => setTag('personal')} className={cx('h-full px-3 rounded text-xs font-medium transition-colors', tag === 'personal' ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}>Personal</button>
+            <button type="button" onClick={() => setTag('work')} className={cx('h-full px-3 rounded text-xs font-medium transition-colors', tag === 'work' ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}>Work</button>
+          </div>
+          <p className="text-2xs text-ink3 mt-1.5">Work-tagged fills roll up into the monthly expense report.</p>
         </div>
 
         <Field label="Notes (optional)">
@@ -211,7 +355,6 @@ export default function AddFillup() {
         </Button>
       </div>
 
-      {/* Mobile sticky save bar */}
       <div className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-bg/95 backdrop-blur border-t border-rule px-4 py-3" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
         <button
           type="button"
@@ -222,7 +365,7 @@ export default function AddFillup() {
           {saving ? 'Saving…' : (
             <>
               {editId ? 'Save changes' : 'Save fill-up'}
-              {parsedPrice && parsedVol ? <span className="opacity-70 font-mono tabular text-sm">· ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span> : null}
+              {parsedTotal ? <span className="opacity-70 font-mono tabular text-sm">· ₹{parsedTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span> : null}
             </>
           )}
         </button>
@@ -235,7 +378,7 @@ function SummaryStat({ label, value, sub }: { label: string; value: string; sub:
   return (
     <div>
       <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">{label}</div>
-      <div className="text-2xl font-semibold text-ink tabular tracking-[-0.02em] mt-1">{value}</div>
+      <div className="text-xl md:text-2xl font-semibold text-ink tabular tracking-[-0.02em] mt-1">{value}</div>
       <div className="text-2xs text-ink3 mt-0.5 tabular truncate">{sub}</div>
     </div>
   );

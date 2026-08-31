@@ -6,6 +6,7 @@ import { IconMoon, IconSun, IconLogout, IconPlus, IconMenu, IconClose, cx } from
 const NAV = [
   { to: '/',        label: 'Overview' },
   { to: '/fillups', label: 'Fill-ups' },
+  { to: '/service', label: 'Service' },
   { to: '/insights',label: 'Insights' },
   { to: '/vehicle', label: 'Vehicle' },
   { to: '/settings',label: 'Settings' },

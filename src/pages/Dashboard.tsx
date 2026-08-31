@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfYear, subMonths, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
+import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { Fillup, FuelGoals } from '../types';
+import { Fillup, FuelGoals, ServiceRecord } from '../types';
 import { DEMO_MODE } from '../config/demo';
-import { DEMO_FILLUPS, DEMO_GOALS } from '../config/demoData';
+import { DEMO_FILLUPS, DEMO_GOALS, DEMO_SERVICES } from '../config/demoData';
 import { Delta, Button, IconPlus, IconArrowRight, cx } from '../components/ui';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { computeReminders } from './Service';
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [fillups, setFillups] = useState<Fillup[]>([]);
+  const { activeVehicleId, activeVehicle, vehicles, setActiveVehicleId } = useVehicle();
+  const [allFillups, setAllFillups] = useState<Fillup[]>([]);
+  const [services, setServices] = useState<ServiceRecord[]>([]);
   const [goals, setGoals] = useState<FuelGoals | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -21,7 +25,8 @@ export default function Dashboard() {
   const load = async () => {
     if (!user) return;
     if (DEMO_MODE) {
-      setFillups([...DEMO_FILLUPS].sort((a, b) => b.date.getTime() - a.date.getTime()));
+      setAllFillups([...DEMO_FILLUPS].sort((a, b) => b.date.getTime() - a.date.getTime()));
+      setServices(DEMO_SERVICES);
       setGoals(DEMO_GOALS[0]);
       setLoading(false);
       return;
@@ -31,11 +36,21 @@ export default function Dashboard() {
       const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
       const loaded: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); loaded.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
-      setFillups(loaded);
+      setAllFillups(loaded);
+      const svcSnap = await getDocs(query(collection(db, 'services'), where('userId', '==', user.uid)));
+      const svc: ServiceRecord[] = [];
+      svcSnap.forEach(d => {
+        const data = d.data();
+        svc.push({ id: d.id, ...data, date: data.date.toDate(), nextDueDate: data.nextDueDate?.toDate() } as ServiceRecord);
+      });
+      setServices(svc);
       const gSnap = await getDocs(query(collection(db, 'fuelGoals'), where('userId', '==', user.uid)));
       gSnap.forEach(d => { const data = d.data(); setGoals({ id: d.id, ...data, createdAt: data.createdAt.toDate(), updatedAt: data.updatedAt.toDate() } as FuelGoals); });
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
+
+  const fillups = useMemo(() => allFillups.filter(f => f.vehicleId === activeVehicleId), [allFillups, activeVehicleId]);
+  const vehicleServices = useMemo(() => services.filter(s => s.vehicleId === activeVehicleId), [services, activeVehicleId]);
 
   if (loading) return <div className="max-w-page mx-auto px-4 md:px-6 py-16 text-sm text-ink3 text-center">Loading…</div>;
 
@@ -93,6 +108,34 @@ export default function Dashboard() {
   const latest = feed[0];
   const avgPrice = latest ? latest.pricePerLitre : 0;
 
+  // Yearly totals and projection
+  const yearStart = startOfYear(now);
+  const daysIntoYear = Math.max(1, differenceInDays(now, yearStart));
+  const daysInYear = 365;
+  const yearSoFar = withStats.filter(f => f.date >= yearStart);
+  const yearSpend = sum(yearSoFar.map(f => f.totalCost));
+  const projected = Math.round((yearSpend / daysIntoYear) * daysInYear);
+
+  // Station comparison
+  const stationStats = new Map<string, { spends: number[]; prices: number[]; totalSpend: number }>();
+  withStats.forEach(f => {
+    if (!f.station) return;
+    const cur = stationStats.get(f.station) || { spends: [], prices: [], totalSpend: 0 };
+    cur.prices.push(f.pricePerLitre);
+    cur.totalSpend += f.totalCost;
+    stationStats.set(f.station, cur);
+  });
+  const stationArray = Array.from(stationStats.entries()).map(([name, s]) => ({
+    name, avgPrice: s.prices.reduce((a, b) => a + b, 0) / s.prices.length, totalSpend: s.totalSpend, count: s.prices.length,
+  })).sort((a, b) => a.avgPrice - b.avgPrice);
+  const cheapest = stationArray[0];
+  const priciest = stationArray[stationArray.length - 1];
+  const priceGap = cheapest && priciest && cheapest !== priciest ? priciest.avgPrice - cheapest.avgPrice : 0;
+
+  // Service reminders (already in an active/dueSoon/overdue shape)
+  const reminders = computeReminders(vehicleServices, latest?.odometer || 0);
+  const urgentReminders = reminders.filter(r => r.tone !== 'ok').slice(0, 3);
+
   // Trend data: 30 days of fill-up mileage values as points
   const trendData = withStats
     .filter(f => (f as any).mileage != null && f.date >= subMonths(now, 6))
@@ -105,15 +148,48 @@ export default function Dashboard() {
   return (
     <div className="max-w-page mx-auto w-full px-4 md:px-6 py-6 md:py-8 rise">
       {/* Big hero numbers */}
-      <div className="flex items-baseline justify-between mb-8 md:mb-12 flex-wrap gap-3">
+      <div className="flex items-start justify-between mb-8 md:mb-10 flex-wrap gap-3">
         <div>
           <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3">Fuel · {format(now, 'MMMM yyyy')}</div>
-          <h1 className="text-lg font-semibold text-ink mt-0.5">Baleno · TN 22 AB 4302</h1>
+          <h1 className="text-lg font-semibold text-ink mt-0.5">{activeVehicle?.name || 'Vehicle'}{activeVehicle?.plate ? ` · ${activeVehicle.plate}` : ''}</h1>
+          {vehicles.length > 1 && (
+            <div className="inline-flex bg-card border border-rule rounded-md p-0.5 mt-3">
+              {vehicles.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setActiveVehicleId(v.id)}
+                  className={cx('h-7 px-3 rounded text-xs font-medium transition-colors', activeVehicleId === v.id ? 'bg-card2 text-ink' : 'text-ink3 hover:text-ink')}
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-2xs text-ink3 font-mono tabular">
           Latest odometer <span className="text-ink font-semibold">{latest?.odometer.toLocaleString('en-IN') ?? '—'} km</span>
         </div>
       </div>
+
+      {/* Service reminder strip */}
+      {urgentReminders.length > 0 && (
+        <div className="mb-6 flex items-center gap-3 border border-rule rounded-lg bg-card px-4 py-3 flex-wrap">
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">Upcoming</div>
+          <div className="flex items-center gap-2 flex-wrap flex-1">
+            {urgentReminders.map(r => (
+              <div key={r.service.id} className={cx('inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-2xs font-mono tabular border',
+                r.tone === 'overdue' ? 'text-down border-down/40 bg-down/5' : 'text-warn border-warn/40 bg-warn/5')}>
+                <span className="font-semibold uppercase tracking-[0.06em]">{r.type}</span>
+                <span className="text-ink3">·</span>
+                {r.daysDue !== undefined && <span>{r.daysDue < 0 ? `${Math.abs(r.daysDue)}d overdue` : `${r.daysDue}d`}</span>}
+                {r.daysDue !== undefined && r.kmDue !== undefined && <span className="text-ink3">·</span>}
+                {r.kmDue !== undefined && <span>{r.kmDue < 0 ? `${Math.abs(r.kmDue).toLocaleString('en-IN')}km past` : `${r.kmDue.toLocaleString('en-IN')}km`}</span>}
+              </div>
+            ))}
+          </div>
+          <Link to="/service" className="text-xs text-ink3 hover:text-ink inline-flex items-center gap-1">Service log <IconArrowRight width={11} height={11} /></Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-rule border-y border-rule mb-10 md:mb-12">
         <HeroStat
@@ -193,6 +269,43 @@ export default function Dashboard() {
             <div className="py-16 text-center text-sm text-ink3">Log more fill-ups to see a trend.</div>
           )}
         </div>
+      </div>
+
+      {/* Yearly projection + cheapest-station callout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-10">
+        <div className="border border-rule rounded-lg p-5 bg-card">
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">Year to date</div>
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-bold text-ink tabular tracking-[-0.02em]">₹{yearSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            <span className="text-sm text-ink3 font-mono tabular">spent</span>
+          </div>
+          <div className="mt-2 text-2xs text-ink3 font-mono tabular flex items-baseline gap-2">
+            <span>Projected <span className="text-ink font-semibold">₹{projected.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span> for {format(now, 'yyyy')}</span>
+            {goals?.yearlyBudget ? (
+              <span className={cx('font-semibold', projected > goals.yearlyBudget ? 'text-down' : 'text-up')}>
+                {projected > goals.yearlyBudget ? '↑' : '↓'} vs ₹{goals.yearlyBudget.toLocaleString('en-IN')} budget
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {cheapest && priciest && priceGap > 0.1 ? (
+          <div className="border border-rule rounded-lg p-5 bg-card">
+            <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">Best-priced station</div>
+            <div className="mt-2 text-md text-ink">
+              <span className="font-bold">{cheapest.name}</span>
+              <span className="text-ink3"> · avg <span className="font-mono tabular">₹{cheapest.avgPrice.toFixed(2)}/L</span></span>
+            </div>
+            <div className="mt-2 text-2xs text-ink3 font-mono tabular">
+              ₹{priceGap.toFixed(2)}/L cheaper than <span className="text-ink font-semibold">{priciest.name}</span>{' '}
+              <span className="text-up font-semibold">· ~₹{(priceGap * (activeVehicle?.tankCapacity || 32)).toFixed(0)}/full tank saved</span>
+            </div>
+          </div>
+        ) : (
+          <div className="border border-dashed border-rule2 rounded-lg p-5 flex items-center justify-center text-xs text-ink3">
+            Log fill-ups with a station name to unlock the comparison.
+          </div>
+        )}
       </div>
 
       {/* Recent fills */}

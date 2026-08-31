@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
+import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Fillup } from '../types';
@@ -13,18 +14,22 @@ type SortField = 'date' | 'odometer' | 'volume' | 'totalCost' | 'mileage';
 
 export default function Fillups() {
   const { user } = useAuth();
-  const [fillups, setFillups] = useState<Fillup[]>([]);
+  const { activeVehicleId, vehicles, setActiveVehicleId } = useVehicle();
+  const [allFillups, setAllFillups] = useState<Fillup[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [tagFilter, setTagFilter] = useState<'all' | 'personal' | 'work'>('all');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const fillups = useMemo(() => allFillups.filter(f => f.vehicleId === activeVehicleId), [allFillups, activeVehicleId]);
 
   useEffect(() => { if (user) load(); /* eslint-disable-line */ }, [user]);
 
   const load = async () => {
     if (!user) return;
     if (DEMO_MODE) {
-      setFillups([...DEMO_FILLUPS]);
+      setAllFillups([...DEMO_FILLUPS]);
       setLoading(false);
       return;
     }
@@ -33,7 +38,7 @@ export default function Fillups() {
       const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
       const loaded: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); loaded.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
-      setFillups(loaded);
+      setAllFillups(loaded);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -56,6 +61,9 @@ export default function Fillups() {
 
   const filtered = useMemo(() => {
     let list = withStats;
+    if (tagFilter !== 'all') {
+      list = list.filter(f => (f.tag || 'personal') === tagFilter);
+    }
     if (q.trim()) {
       const s = q.toLowerCase();
       list = list.filter(f =>
@@ -72,7 +80,7 @@ export default function Fillups() {
       return sortDir === 'asc' ? av - bv : bv - av;
     });
     return list;
-  }, [withStats, q, sortField, sortDir]);
+  }, [withStats, q, sortField, sortDir, tagFilter]);
 
   const toggleSort = (f: SortField) => {
     if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -81,9 +89,71 @@ export default function Fillups() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this fill-up?')) return;
-    if (DEMO_MODE) { setFillups(fillups.filter(f => f.id !== id)); return; }
-    try { await deleteDoc(doc(db, 'fillups', id)); setFillups(fillups.filter(f => f.id !== id)); }
+    if (DEMO_MODE) { setAllFillups(allFillups.filter(f => f.id !== id)); return; }
+    try { await deleteDoc(doc(db, 'fillups', id)); setAllFillups(allFillups.filter(f => f.id !== id)); }
     catch (e) { console.error(e); alert('Delete failed'); }
+  };
+
+  const exportCsv = () => {
+    const rows = [
+      ['Date', 'Odometer', 'Litres', 'Rs/L', 'Total', 'Distance', 'Mileage', 'Station', 'Grade', 'Tag', 'Full', 'Notes'],
+      ...filtered.map(f => [
+        format(f.date, 'yyyy-MM-dd HH:mm'),
+        String(f.odometer),
+        f.volume.toFixed(2),
+        f.pricePerLitre.toFixed(2),
+        f.totalCost.toFixed(2),
+        (f as any).distance ? String((f as any).distance) : '',
+        (f as any).mileage ? ((f as any).mileage as number).toFixed(2) : '',
+        f.station || '',
+        f.fuelGrade || '',
+        f.tag || 'personal',
+        f.isFull ? 'yes' : 'no',
+        (f.notes || '').replace(/"/g, '""'),
+      ]),
+    ];
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fuel-fillups-${format(new Date(), 'yyyyMMdd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportExpenseReport = () => {
+    const work = filtered.filter(f => f.tag === 'work');
+    if (work.length === 0) { alert('No work-tagged fill-ups to export.'); return; }
+    // Group by month, compute total spend and estimated work km
+    const totalSpend = work.reduce((s, f) => s + f.totalCost, 0);
+    const totalDistance = work.reduce((s, f) => s + ((f as any).distance || 0), 0);
+    const rows = [
+      ['Fuel expense report'],
+      ['Generated', format(new Date(), 'yyyy-MM-dd HH:mm')],
+      ['Vehicle', vehicles.find(v => v.id === activeVehicleId)?.name || ''],
+      [''],
+      ['Date', 'Odometer', 'Litres', 'Rs/L', 'Total', 'Distance', 'Station'],
+      ...work.map(f => [
+        format(f.date, 'yyyy-MM-dd'),
+        String(f.odometer),
+        f.volume.toFixed(2),
+        f.pricePerLitre.toFixed(2),
+        f.totalCost.toFixed(2),
+        (f as any).distance ? String((f as any).distance) : '',
+        f.station || '',
+      ]),
+      [''],
+      ['Totals', '', '', '', totalSpend.toFixed(2), String(totalDistance)],
+    ];
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fuel-expense-${format(new Date(), 'yyyyMM')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const SortHead = ({ field, label, align = 'right' }: { field: SortField; label: string; align?: 'left' | 'right' }) => (
@@ -105,12 +175,27 @@ export default function Fillups() {
           <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3">All entries</div>
           <h1 className="text-2xl font-semibold text-ink tracking-[-0.02em]">Fill-ups</h1>
         </div>
-        <Link to="/add">
-          <Button variant="primary"><IconPlus /> New fill-up</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {vehicles.length > 1 && (
+            <div className="inline-flex bg-card border border-rule rounded-md p-0.5 h-9">
+              {vehicles.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setActiveVehicleId(v.id)}
+                  className={cx('h-full px-3 rounded text-xs font-medium transition-colors', activeVehicleId === v.id ? 'bg-card2 text-ink' : 'text-ink3 hover:text-ink')}
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <Link to="/add">
+            <Button variant="primary"><IconPlus /> New fill-up</Button>
+          </Link>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="flex-1 max-w-sm flex items-center gap-2 h-9 bg-card border border-rule rounded-md px-3">
           <IconSearch className="text-ink3" width={13} height={13} />
           <input
@@ -121,7 +206,20 @@ export default function Fillups() {
             className="flex-1 outline-none bg-transparent text-sm text-ink placeholder:text-ink3"
           />
         </div>
-        <span className="text-2xs font-mono tabular text-ink3">{filtered.length} of {fillups.length}</span>
+        <div className="inline-flex bg-card border border-rule rounded-md p-0.5 h-9">
+          {(['all', 'personal', 'work'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTagFilter(t)}
+              className={cx('h-full px-3 rounded text-xs font-medium capitalize transition-colors', tagFilter === t ? 'bg-card2 text-ink' : 'text-ink3 hover:text-ink')}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <Button size="sm" onClick={exportCsv}>Export CSV</Button>
+        <Button size="sm" onClick={exportExpenseReport}>Expense report</Button>
+        <span className="ml-auto text-2xs font-mono tabular text-ink3">{filtered.length} of {fillups.length}</span>
       </div>
 
       {loading ? (
