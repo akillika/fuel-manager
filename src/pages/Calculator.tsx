@@ -49,7 +49,8 @@ export default function Calculator() {
 
   // Inputs
   const [distance, setDistance] = useState<string>('300');
-  const [source, setSource] = useState<Source>('latest');
+  const [mileageSource, setMileageSource] = useState<Source>('latest');
+  const [priceSource, setPriceSource]     = useState<Source>('latest');
   const [customValues, setCustomValues] = useState<Record<string, { mileage: string; price: string }>>({});
 
   useEffect(() => { if (user) load(); /* eslint-disable-line */ }, [user]);
@@ -102,19 +103,19 @@ export default function Calculator() {
   const dist = Number(distance) || 0;
 
   const results = vehicleStats.map(vs => {
+    const cv = customValues[vs.vehicle.id];
     let mileage: number | null = null;
-    let price: number | null = null;
-    let mileageSrc = source;
-    let priceSrc = source;
-    if (source === 'latest') { mileage = vs.latestMileage; price = vs.latestPrice; }
-    else if (source === 'average') { mileage = vs.averageMileage; price = vs.averagePrice; }
-    else {
-      const cv = customValues[vs.vehicle.id];
-      mileage = cv?.mileage ? Number(cv.mileage) : null;
-      price = cv?.price ? Number(cv.price) : null;
-    }
-    // Fall back if source has nothing for this vehicle
+    let mileageSrc: Source = mileageSource;
+    if (mileageSource === 'latest')  mileage = vs.latestMileage;
+    else if (mileageSource === 'average') mileage = vs.averageMileage;
+    else                                   mileage = cv?.mileage ? Number(cv.mileage) : null;
     if (mileage == null) { mileage = vs.latestMileage ?? vs.averageMileage; mileageSrc = 'latest'; }
+
+    let price: number | null = null;
+    let priceSrc: Source = priceSource;
+    if (priceSource === 'latest')  price = vs.latestPrice;
+    else if (priceSource === 'average') price = vs.averagePrice;
+    else                                 price = cv?.price ? Number(cv.price) : null;
     if (price == null) { price = vs.latestPrice ?? vs.averagePrice; priceSrc = 'latest'; }
 
     const volume = mileage && mileage > 0 ? dist / mileage : 0;
@@ -130,7 +131,10 @@ export default function Calculator() {
   const priciest = sorted[sorted.length - 1];
   const spread = cheapest && priciest && cheapest !== priciest ? priciest.cost - cheapest.cost : 0;
 
-  const sourceLabel = source === 'latest' ? 'Latest' : source === 'average' ? 'Average' : 'Custom';
+  const labelFor = (s: Source) => s === 'latest' ? 'latest' : s === 'average' ? 'average' : 'custom';
+  const sourceLabel = mileageSource === priceSource
+    ? `${labelFor(mileageSource)} values`
+    : `${labelFor(mileageSource)} mileage & ${labelFor(priceSource)} price`;
 
   if (loading) return <div className="max-w-page mx-auto px-4 md:px-6 py-16 text-sm text-ink3 text-center">Loading…</div>;
 
@@ -161,23 +165,8 @@ export default function Calculator() {
               <span className="text-sm text-ink3 font-mono tabular">km</span>
             </div>
           </div>
-          <div className="px-4 py-4 md:px-5 md:flex md:flex-col md:justify-between">
-            <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">Mileage &amp; price from</div>
-            <div className="inline-flex self-start bg-card2 border border-rule rounded-md p-0.5 h-11">
-              {(['latest', 'average', 'custom'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setSource(s)}
-                  className={cx(
-                    'h-full px-3.5 rounded text-sm font-medium capitalize transition-colors',
-                    source === s ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink',
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SourceToggle label="Mileage from" value={mileageSource} onChange={setMileageSource} />
+          <SourceToggle label="Price from"   value={priceSource}   onChange={setPriceSource} />
         </div>
       </div>
 
@@ -205,7 +194,8 @@ export default function Calculator() {
               volume={r.volume}
               cost={r.cost}
               costPerKm={r.costPerKm}
-              source={source}
+              mileageSource={mileageSource}
+              priceSource={priceSource}
               mileageSrc={r.mileageSrc}
               priceSrc={r.priceSrc}
               customValues={customValues[r.vs.vehicle.id] || { mileage: '', price: '' }}
@@ -220,7 +210,7 @@ export default function Calculator() {
       {/* Callout comparison */}
       {cheapest && priciest && spread > 0.5 && (
         <div className="border border-rule rounded-lg bg-card2 p-4 text-sm">
-          For <span className="font-mono tabular text-ink font-semibold">{dist.toLocaleString('en-IN')} km</span> using {sourceLabel.toLowerCase()} values,{' '}
+          For <span className="font-mono tabular text-ink font-semibold">{dist.toLocaleString('en-IN')} km</span> using {sourceLabel},{' '}
           <span className="text-ink font-semibold">{cheapest.vs.vehicle.name}</span>{' '}
           <span className="text-ink3">costs</span>{' '}
           <span className="text-ink font-mono tabular font-semibold">₹{cheapest.cost.toFixed(0)}</span>
@@ -236,7 +226,7 @@ export default function Calculator() {
 }
 
 function VehicleCostCard({
-  vs, mileage, price, volume, cost, costPerKm, source, mileageSrc, priceSrc,
+  vs, mileage, price, volume, cost, costPerKm, mileageSource, priceSource, mileageSrc, priceSrc,
   customValues, setCustomValues, isCheapest,
 }: {
   vs: VehicleStats;
@@ -245,7 +235,8 @@ function VehicleCostCard({
   volume: number;
   cost: number;
   costPerKm: number;
-  source: Source;
+  mileageSource: Source;
+  priceSource: Source;
   mileageSrc: Source;
   priceSrc: Source;
   customValues: { mileage: string; price: string };
@@ -254,6 +245,8 @@ function VehicleCostCard({
   rank: number;
 }) {
   const noHistory = vs.fillCount === 0;
+  const anyCustom = mileageSource === 'custom' || priceSource === 'custom';
+  const srcLabel = (src: Source) => src === 'custom' ? 'Custom' : src === 'latest' ? 'Latest' : 'Avg';
   return (
     <div className={cx('border rounded-lg p-5 bg-card relative', isCheapest ? 'border-up/60 shadow-[0_0_0_1px_var(--up)_inset]' : 'border-rule')}>
       {isCheapest && (
@@ -276,8 +269,8 @@ function VehicleCostCard({
           </div>
 
           <div className="grid grid-cols-3 gap-px bg-rule border border-rule rounded-md overflow-hidden mb-3">
-            <MiniStat label="Mileage" value={mileage.toFixed(1)} unit="km/L" src={source === 'custom' ? 'Custom' : mileageSrc === 'latest' ? 'Latest' : 'Avg'} />
-            <MiniStat label="₹/L"     value={price.toFixed(2)}    unit="₹"    src={source === 'custom' ? 'Custom' : priceSrc === 'latest' ? 'Latest' : 'Avg'} />
+            <MiniStat label="Mileage" value={mileage.toFixed(1)} unit="km/L" src={srcLabel(mileageSrc)} />
+            <MiniStat label="₹/L"     value={price.toFixed(2)}    unit="₹"    src={srcLabel(priceSrc)} />
             <MiniStat label="Volume"  value={volume.toFixed(2)}   unit="L"    src="" />
           </div>
 
@@ -285,32 +278,61 @@ function VehicleCostCard({
             Cost per km <span className="text-ink font-semibold">₹{costPerKm.toFixed(2)}</span>
           </div>
 
-          {source === 'custom' && (
-            <div className="mt-4 pt-4 border-t border-rule grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3 mb-1">Mileage (km/L)</div>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={customValues.mileage}
-                  onChange={(e) => setCustomValues({ ...customValues, mileage: e.target.value })}
-                />
-              </div>
-              <div>
-                <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3 mb-1">Price (₹/L)</div>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={customValues.price}
-                  onChange={(e) => setCustomValues({ ...customValues, price: e.target.value })}
-                />
-              </div>
+          {anyCustom && (
+            <div className={cx(
+              'mt-4 pt-4 border-t border-rule grid gap-3',
+              mileageSource === 'custom' && priceSource === 'custom' ? 'grid-cols-2' : 'grid-cols-1',
+            )}>
+              {mileageSource === 'custom' && (
+                <div>
+                  <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3 mb-1">Mileage (km/L)</div>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={customValues.mileage}
+                    onChange={(e) => setCustomValues({ ...customValues, mileage: e.target.value })}
+                  />
+                </div>
+              )}
+              {priceSource === 'custom' && (
+                <div>
+                  <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3 mb-1">Price (₹/L)</div>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={customValues.price}
+                    onChange={(e) => setCustomValues({ ...customValues, price: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function SourceToggle({ label, value, onChange }: { label: string; value: Source; onChange: (s: Source) => void }) {
+  return (
+    <div className="px-4 py-4 md:px-5 md:flex md:flex-col md:justify-between">
+      <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">{label}</div>
+      <div className="inline-flex self-start bg-card2 border border-rule rounded-md p-0.5 h-11">
+        {(['latest', 'average', 'custom'] as const).map(s => (
+          <button
+            key={s}
+            onClick={() => onChange(s)}
+            className={cx(
+              'h-full px-3.5 rounded text-sm font-medium capitalize transition-colors',
+              value === s ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink',
+            )}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
