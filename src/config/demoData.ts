@@ -134,6 +134,30 @@ export const DEMO_FILLUPS: Fillup[] = raw.map((r, i) => {
   };
 });
 
+// Bike fill-ups for the Classic 350 — smaller volumes, better mileage
+const bikeRaw = [
+  { date: daysAgo(88, 9, 30),  odometer: 7810, volume: 10.2, pricePerLitre: 95.20, station: 'IOCL Anna Nagar' },
+  { date: daysAgo(69, 10, 5),  odometer: 8100, volume: 8.6,  pricePerLitre: 95.80, station: 'HP Adyar' },
+  { date: daysAgo(50, 8, 15),  odometer: 8420, volume: 9.4,  pricePerLitre: 96.10, station: 'IOCL Anna Nagar' },
+  { date: daysAgo(31, 18, 40), odometer: 8720, volume: 8.8,  pricePerLitre: 96.30, station: 'IOCL Anna Nagar' },
+  { date: daysAgo(14, 19, 20), odometer: 9018, volume: 9.1,  pricePerLitre: 96.40, station: 'HP Adyar' },
+];
+bikeRaw.forEach((r, i) => {
+  DEMO_FILLUPS.push({
+    id: `bike-fu-${i}`,
+    userId: DEMO_UID,
+    vehicleId: 'v-classic350',
+    date: r.date,
+    odometer: r.odometer,
+    volume: r.volume,
+    pricePerLitre: r.pricePerLitre,
+    totalCost: Number((r.volume * r.pricePerLitre).toFixed(2)),
+    station: r.station,
+    fuelGrade: 'Petrol',
+    isFull: true,
+  });
+});
+
 export const DEMO_GOALS: FuelGoals[] = [
   {
     id: 'g-1',

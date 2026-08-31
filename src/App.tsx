@@ -11,6 +11,7 @@ import Insights from './pages/Insights';
 import Service from './pages/Service';
 import Vehicle from './pages/Vehicle';
 import Settings from './pages/Settings';
+import Calculator from './pages/Calculator';
 
 const LS_THEME = 'fuel.theme';
 
@@ -36,6 +37,7 @@ export default function App() {
                     <Route path="/add" element={<AddFillup />} />
                     <Route path="/service" element={<Service />} />
                     <Route path="/insights" element={<Insights />} />
+                    <Route path="/calc" element={<Calculator />} />
                     <Route path="/vehicle" element={<Vehicle />} />
                     <Route path="/settings" element={<Settings />} />
                   </Routes>
