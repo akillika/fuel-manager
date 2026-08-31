@@ -7,7 +7,7 @@ import { db } from '../config/firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { DEMO_MODE } from '../config/demo';
 import { parseFuelio, FuelioParsed } from '../lib/fuelio';
-import { Button, Field, Textarea, Select, IconArrowRight } from '../components/ui';
+import { Button, Select, IconArrowRight } from '../components/ui';
 
 type VehicleMapping = { targetVehicleId: string | 'new'; targetName?: string };
 
@@ -148,31 +148,30 @@ export default function Import() {
         </p>
       </div>
 
-      {!importResult && (
-        <div className="border border-rule rounded-lg bg-card p-5 mb-6">
-          <div className="mb-4 flex items-center gap-3 flex-wrap">
-            <label className="inline-flex items-center gap-2 h-9 px-3 rounded-md bg-card2 border border-rule text-sm font-medium text-ink cursor-pointer hover:bg-bg3 transition-colors">
-              <input type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] || null)} />
-              Choose file
-            </label>
-            <span className="text-2xs text-ink3">— or paste below</span>
-            <div className="ml-auto flex items-center gap-2">
-              {csvText && <Button size="sm" onClick={() => { setCsvText(''); setParsed(null); setError(null); }}>Clear</Button>}
-              <Button size="sm" variant="primary" onClick={() => handleParse()}>Parse</Button>
-            </div>
+      {!importResult && !parsed && (
+        <label className="block border border-dashed border-rule2 rounded-lg bg-card p-8 mb-6 text-center cursor-pointer hover:bg-card2 transition-colors">
+          <input
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            className="hidden"
+            onChange={(e) => handleFile(e.target.files?.[0] || null)}
+          />
+          <div className="text-md font-semibold text-ink mb-1">Choose your Fuelio CSV</div>
+          <div className="text-2xs text-ink3 font-mono tabular">
+            Export from Fuelio → tap here to upload → preview below
           </div>
-          <Field label="Fuelio CSV">
-            <Textarea
-              rows={6}
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              placeholder={'## Vehicle\n"Name","Description",...\n"Classic 350",...\n## Log\n...'}
-              className="font-mono !text-xs"
-            />
-          </Field>
           {error && (
-            <div className="mt-3 text-xs text-down px-3 py-2 rounded-md border border-down/40 bg-down/5">{error}</div>
+            <div className="mt-4 text-xs text-down px-3 py-2 rounded-md border border-down/40 bg-down/5 inline-block">{error}</div>
           )}
+        </label>
+      )}
+
+      {!importResult && parsed && (
+        <div className="flex items-center justify-between mb-6">
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">Preview</div>
+          <Button size="sm" onClick={() => { setCsvText(''); setParsed(null); setError(null); setMappings([]); }}>
+            Choose a different file
+          </Button>
         </div>
       )}
 
