@@ -11,6 +11,7 @@ export default function Settings() {
   const { user } = useAuth();
   const [goals, setGoals] = useState<FuelGoals | null>(null);
   const [budget, setBudget] = useState<string>('');
+  const [yearlyBudget, setYearlyBudget] = useState<string>('');
   const [mileageTarget, setMileageTarget] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,6 +23,7 @@ export default function Settings() {
       const g = DEMO_GOALS[0];
       setGoals(g);
       setBudget(String(g.monthlyBudget || ''));
+      setYearlyBudget(String(g.yearlyBudget || ''));
       setMileageTarget(String(g.mileageTarget || ''));
       setLoading(false);
       return;
@@ -34,6 +36,7 @@ export default function Settings() {
         const g: FuelGoals = { id: d.id, ...data, createdAt: data.createdAt.toDate(), updatedAt: data.updatedAt.toDate() } as FuelGoals;
         setGoals(g);
         setBudget(String(g.monthlyBudget || ''));
+        setYearlyBudget(String(g.yearlyBudget || ''));
         setMileageTarget(String(g.mileageTarget || ''));
       });
     } finally { setLoading(false); }
@@ -47,6 +50,7 @@ export default function Settings() {
       const data: any = {
         userId: user.uid,
         monthlyBudget: Number(budget) || 0,
+        yearlyBudget: Number(yearlyBudget) || 0,
         mileageTarget: Number(mileageTarget) || 0,
         updatedAt: Timestamp.fromDate(new Date()),
       };
@@ -74,6 +78,9 @@ export default function Settings() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Monthly budget (₹)" hint="Nudges the Overview card colour when you cross it.">
             <Input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="6000" />
+          </Field>
+          <Field label="Yearly budget (₹)" hint="Colors the Year-to-date projection tile.">
+            <Input type="number" value={yearlyBudget} onChange={(e) => setYearlyBudget(e.target.value)} placeholder="70000" />
           </Field>
           <Field label="Mileage target (km/L)" hint="Shows as a dashed reference line on the trend chart.">
             <Input type="number" step="0.1" value={mileageTarget} onChange={(e) => setMileageTarget(e.target.value)} placeholder="19" />

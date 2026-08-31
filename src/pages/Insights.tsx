@@ -1,30 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format, startOfMonth } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
+import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { Fillup } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { cx } from '../components/ui';
 
 export default function Insights() {
   const { user } = useAuth();
-  const [fillups, setFillups] = useState<Fillup[]>([]);
+  const { activeVehicleId, vehicles, setActiveVehicleId } = useVehicle();
+  const [allFillups, setAllFillups] = useState<Fillup[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { if (user) load(); /* eslint-disable-line */ }, [user]);
   const load = async () => {
     if (!user) return;
-    if (DEMO_MODE) { setFillups([...DEMO_FILLUPS]); setLoading(false); return; }
+    if (DEMO_MODE) { setAllFillups([...DEMO_FILLUPS]); setLoading(false); return; }
     try {
       setLoading(true);
       const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
       const list: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); list.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
-      setFillups(list);
+      setAllFillups(list);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
+
+  const fillups = useMemo(() => allFillups.filter(f => f.vehicleId === activeVehicleId), [allFillups, activeVehicleId]);
 
   const withStats = useMemo(() => {
     const asc = [...fillups].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -72,18 +77,55 @@ export default function Insights() {
     return Array.from(map.values());
   }, [withStats]);
 
-  if (loading) return <div className="max-w-page mx-auto px-4 md:px-6 py-16 text-sm text-ink3 text-center">Loading…</div>;
+  // Work vs personal breakdown
+  const workVsPersonal = useMemo(() => {
+    const work = withStats.filter(f => f.tag === 'work');
+    const personal = withStats.filter(f => f.tag !== 'work');
+    const workSpend = work.reduce((s, f) => s + f.totalCost, 0);
+    const personalSpend = personal.reduce((s, f) => s + f.totalCost, 0);
+    const workDistance = work.reduce((s, f) => s + ((f as any).distance || 0), 0);
+    const personalDistance = personal.reduce((s, f) => s + ((f as any).distance || 0), 0);
+    return { work: { count: work.length, spend: workSpend, distance: workDistance }, personal: { count: personal.length, spend: personalSpend, distance: personalDistance } };
+  }, [withStats]);
 
   const cheapest = stations[0];
   const priciest = stations[stations.length - 1];
-  const diff = cheapest && priciest ? priciest.avgPrice - cheapest.avgPrice : 0;
+  const diff = cheapest && priciest && cheapest !== priciest ? priciest.avgPrice - cheapest.avgPrice : 0;
+
+  if (loading) return <div className="max-w-page mx-auto px-4 md:px-6 py-16 text-sm text-ink3 text-center">Loading…</div>;
 
   return (
     <div className="max-w-page mx-auto w-full px-4 md:px-6 py-6 md:py-8 rise">
-      <div className="mb-8">
-        <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3">Analysis</div>
-        <h1 className="text-2xl font-semibold text-ink tracking-[-0.02em]">Insights</h1>
+      <div className="flex items-baseline justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3">Analysis</div>
+          <h1 className="text-2xl font-semibold text-ink tracking-[-0.02em]">Insights</h1>
+        </div>
+        {vehicles.length > 1 && (
+          <div className="inline-flex bg-card border border-rule rounded-md p-0.5 h-9">
+            {vehicles.map(v => (
+              <button
+                key={v.id}
+                onClick={() => setActiveVehicleId(v.id)}
+                className={cx('h-full px-3 rounded text-xs font-medium transition-colors', activeVehicleId === v.id ? 'bg-card2 text-ink' : 'text-ink3 hover:text-ink')}
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Work vs personal breakdown */}
+      {(workVsPersonal.work.count > 0 || workVsPersonal.personal.count > 0) && (
+        <div className="mb-8">
+          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-3">Work vs personal</div>
+          <div className="grid grid-cols-2 gap-px bg-rule border border-rule rounded-lg overflow-hidden">
+            <TagBreakdown label="Personal" tone="ink" data={workVsPersonal.personal} />
+            <TagBreakdown label="Work"     tone="up"  data={workVsPersonal.work} />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
         <div>
@@ -157,7 +199,7 @@ export default function Insights() {
         )}
       </div>
 
-      {cheapest && priciest && diff > 0.5 && (
+      {cheapest && priciest && diff > 0.1 && (
         <div className="border border-rule rounded-lg bg-card2 p-4 text-sm">
           <span className="text-ink font-semibold">{cheapest.name}</span>{' '}
           <span className="text-ink3">is ₹{diff.toFixed(2)}/L cheaper than</span>{' '}
@@ -165,6 +207,20 @@ export default function Insights() {
           <span className="text-ink3"> on average — roughly ₹{(diff * 30).toFixed(0)} saved per full tank.</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function TagBreakdown({ label, tone, data }: { label: string; tone: 'ink' | 'up'; data: { count: number; spend: number; distance: number } }) {
+  const numClass = tone === 'up' ? 'text-up' : 'text-ink';
+  return (
+    <div className="bg-bg p-4">
+      <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">{label}</div>
+      <div className="flex items-baseline gap-3 mt-2">
+        <span className={cx('text-2xl font-semibold tabular tracking-[-0.02em]', numClass)}>₹{data.spend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+        <span className="text-xs text-ink3 font-mono tabular">{data.count} {data.count === 1 ? 'fill' : 'fills'}</span>
+      </div>
+      <div className="text-2xs text-ink3 font-mono tabular mt-1">{data.distance.toLocaleString('en-IN')} km</div>
     </div>
   );
 }

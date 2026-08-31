@@ -139,6 +139,7 @@ export const DEMO_GOALS: FuelGoals[] = [
     id: 'g-1',
     userId: DEMO_UID,
     monthlyBudget: 6000,
+    yearlyBudget: 70000,
     mileageTarget: 19,
     createdAt: daysAgo(180),
     updatedAt: daysAgo(30),
