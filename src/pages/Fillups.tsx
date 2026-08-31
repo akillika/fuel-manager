@@ -124,19 +124,23 @@ export default function Fillups() {
   };
 
   const exportExpenseReport = () => {
-    const work = filtered.filter(f => f.tag === 'work');
-    if (work.length === 0) { alert('No work-tagged fill-ups to export.'); return; }
-    // Group by month, compute total spend and estimated work km
-    const totalSpend = work.reduce((s, f) => s + f.totalCost, 0);
-    const totalDistance = work.reduce((s, f) => s + ((f as any).distance || 0), 0);
+    // Respects the active tag filter — All, Personal, or Work.
+    const rowsForExport = filtered;
+    if (rowsForExport.length === 0) { alert('No fill-ups to export for this tag.'); return; }
+    const scope = tagFilter === 'all' ? 'All trips' : tagFilter === 'work' ? 'Work trips' : 'Personal trips';
+    const totalSpend = rowsForExport.reduce((s, f) => s + f.totalCost, 0);
+    const totalDistance = rowsForExport.reduce((s, f) => s + ((f as any).distance || 0), 0);
+    const totalVolume = rowsForExport.reduce((s, f) => s + f.volume, 0);
     const rows = [
       ['Fuel expense report'],
+      ['Scope', scope],
       ['Generated', format(new Date(), 'yyyy-MM-dd HH:mm')],
       ['Vehicle', vehicles.find(v => v.id === activeVehicleId)?.name || ''],
       [''],
-      ['Date', 'Odometer', 'Litres', 'Rs/L', 'Total', 'Distance', 'Station'],
-      ...work.map(f => [
+      ['Date', 'Tag', 'Odometer', 'Litres', 'Rs/L', 'Total', 'Distance', 'Station'],
+      ...rowsForExport.map(f => [
         format(f.date, 'yyyy-MM-dd'),
+        (f.tag || 'personal') as string,
         String(f.odometer),
         f.volume.toFixed(2),
         f.pricePerLitre.toFixed(2),
@@ -145,14 +149,14 @@ export default function Fillups() {
         f.station || '',
       ]),
       [''],
-      ['Totals', '', '', '', totalSpend.toFixed(2), String(totalDistance)],
+      ['Totals', '', '', totalVolume.toFixed(2), '', totalSpend.toFixed(2), String(totalDistance)],
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `fuel-expense-${format(new Date(), 'yyyyMM')}.csv`;
+    a.download = `fuel-expense-${tagFilter}-${format(new Date(), 'yyyyMM')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
