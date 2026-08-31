@@ -162,7 +162,7 @@ export default function Calculator() {
             </div>
           </div>
           <div className="px-4 py-4 md:px-5 md:flex md:flex-col md:justify-between">
-            <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">Using</div>
+            <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">Mileage &amp; price from</div>
             <div className="inline-flex self-start bg-card2 border border-rule rounded-md p-0.5 h-11">
               {(['latest', 'average', 'custom'] as const).map(s => (
                 <button
