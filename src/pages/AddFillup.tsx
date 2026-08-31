@@ -111,22 +111,24 @@ export default function AddFillup() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-6 md:py-10 rise">
-      <div className="flex items-baseline justify-between mb-8">
+    <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-6 md:py-10 rise pb-32 md:pb-6">
+      <div className="flex items-baseline justify-between mb-6 md:mb-8">
         <div>
           <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3">{editId ? 'Edit' : 'New'}</div>
-          <h1 className="text-2xl font-semibold text-ink tracking-[-0.02em]">{editId ? 'Edit fill-up' : 'Log fill-up'}</h1>
+          <h1 className="text-xl md:text-2xl font-semibold text-ink tracking-[-0.02em]">{editId ? 'Edit fill-up' : 'Log fill-up'}</h1>
         </div>
         <button onClick={cancel} className="inline-flex items-center justify-center w-9 h-9 rounded-md text-ink3 hover:text-ink hover:bg-card2 transition-colors" aria-label="Cancel"><IconClose /></button>
       </div>
 
-      {/* Live summary strip */}
-      <div className="border border-rule rounded-lg bg-card p-4 md:p-5 mb-6">
+      {/* Live summary strip - sticks near the top on mobile so it stays visible while filling the form */}
+      <div className="sticky top-14 z-10 md:relative md:top-0 -mx-4 md:mx-0 px-4 md:px-0 pb-3 md:pb-0 md:mb-6 bg-bg/95 backdrop-blur md:bg-transparent md:backdrop-blur-none">
+      <div className="border border-rule rounded-lg bg-card p-4 md:p-5">
         <div className="grid grid-cols-3 gap-4">
           <SummaryStat label="Total" value={parsedPrice && parsedVol ? `₹${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'} sub={parsedPrice ? `${parsedVol.toFixed(1)} L × ₹${parsedPrice.toFixed(2)}` : ' '} />
           <SummaryStat label="Distance" value={inferred ? `${inferred.distance.toLocaleString('en-IN')} km` : '—'} sub="since last full" />
           <SummaryStat label="Mileage" value={inferred ? inferred.mileage.toFixed(1) : '—'} sub="km/L" />
         </div>
+      </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5">
@@ -202,11 +204,28 @@ export default function AddFillup() {
         </Field>
       </div>
 
-      <div className="flex items-center justify-end gap-2 mt-8 pt-6 border-t border-rule">
+      <div className="hidden md:flex items-center justify-end gap-2 mt-8 pt-6 border-t border-rule">
         <Button onClick={cancel}>Cancel</Button>
         <Button variant="primary" onClick={save} disabled={saving}>
           {saving ? 'Saving…' : editId ? 'Save changes' : 'Save fill-up'}
         </Button>
+      </div>
+
+      {/* Mobile sticky save bar */}
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-bg/95 backdrop-blur border-t border-rule px-4 py-3" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="w-full h-12 rounded-md bg-ink text-bg font-semibold text-md flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : (
+            <>
+              {editId ? 'Save changes' : 'Save fill-up'}
+              {parsedPrice && parsedVol ? <span className="opacity-70 font-mono tabular text-sm">· ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span> : null}
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

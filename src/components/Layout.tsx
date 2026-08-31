@@ -141,17 +141,33 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
       </header>
 
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 pb-20 md:pb-0">
         {children}
       </main>
 
       {/* Minimal footer */}
-      <footer className="border-t border-rule mt-8">
+      <footer className="border-t border-rule mt-8 hidden md:block">
         <div className="max-w-page mx-auto px-4 md:px-6 h-12 flex items-center justify-between text-2xs text-ink3">
           <span className="font-mono">fuel.akil.codes</span>
           <span className="font-mono">MMXXVI</span>
         </div>
       </footer>
+
+      {/* Mobile FAB - always available for on-the-go fill-up logging */}
+      {!isActive('/add') && (
+        <Link
+          to="/add"
+          className="md:hidden fixed z-40 inline-flex items-center gap-2 h-12 pl-4 pr-5 rounded-full bg-ink text-bg shadow-[0_8px_24px_-8px_rgba(0,0,0,0.25),0_4px_12px_rgba(0,0,0,0.15)] transition-transform active:scale-95"
+          style={{
+            bottom: 'calc(20px + env(safe-area-inset-bottom))',
+            right: '16px',
+          }}
+          aria-label="Add fill-up"
+        >
+          <IconPlus width={14} height={14} />
+          <span className="text-sm font-semibold">Fill-up</span>
+        </Link>
+      )}
     </div>
   );
 }
