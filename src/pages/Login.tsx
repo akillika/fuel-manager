@@ -143,12 +143,19 @@ export default function Login() {
   };
 
   const onSignIn = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
       await signInWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in.');
+      // Popup dismissed by user is expected — swallow so the UI doesn't shout.
+      const code = err?.code || '';
+      const dismissed =
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        code === 'auth/user-cancelled';
+      if (!dismissed) setError(err?.message || 'Failed to sign in.');
+    } finally {
       setLoading(false);
     }
   };
