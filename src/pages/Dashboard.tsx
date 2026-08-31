@@ -167,7 +167,13 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={trendData} margin={{ top: 6, right: 12, left: -14, bottom: 6 }}>
                 <XAxis dataKey="date" tickLine={false} axisLine={false} interval="preserveEnd" />
-                <YAxis tickLine={false} axisLine={false} width={38} domain={['dataMin - 1', 'dataMax + 1']} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={38}
+                  domain={([min, max]: [number, number]) => [Math.floor(min) - 1, Math.ceil(max) + 1]}
+                  allowDecimals={false}
+                />
                 <Tooltip cursor={{ stroke: 'var(--rule-2)', strokeWidth: 1 }} />
                 {goals?.mileageTarget && (
                   <ReferenceLine y={goals.mileageTarget} stroke="var(--rule-2)" strokeDasharray="3 3" />
