@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clean modern dashboard tokens.
+   Linear/Vercel/Height inspired. Neutral canvas, one accent, data-first. */
+
+:root {
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Segoe UI', system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --bg:       #ffffff;
+  --bg-2:     #fafafa;
+  --bg-3:     #f4f4f5;
+  --card:     #ffffff;
+  --card-2:   #f7f7f8;
+  --ink:      #0a0a0a;
+  --ink-2:    #404040;
+  --ink-3:    #808080;
+  --ink-4:    #b8b8b8;
+  --rule:     rgba(0, 0, 0, 0.08);
+  --rule-2:   rgba(0, 0, 0, 0.16);
+
+  --accent:   #0a0a0a;
+  --up:       #16a34a;
+  --down:     #dc2626;
+  --warn:     #d97706;
+
+  color-scheme: light;
+}
+
+:root.dark {
+  --bg:       #0a0a0a;
+  --bg-2:     #111111;
+  --bg-3:     #191919;
+  --card:     #111111;
+  --card-2:   #191919;
+  --ink:      #fafafa;
+  --ink-2:    #d4d4d4;
+  --ink-3:    #909090;
+  --ink-4:    #565656;
+  --rule:     rgba(255, 255, 255, 0.09);
+  --rule-2:   rgba(255, 255, 255, 0.18);
+
+  --accent:   #fafafa;
+  --up:       #22c55e;
+  --down:     #ef4444;
+  --warn:     #f59e0b;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'ss01', 'cv11', 'kern';
+  text-rendering: optimizeLegibility;
+}
+#root { min-height: 100vh; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--ink); color: var(--bg); }
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--rule-2); border-radius: 999px; border: 3px solid var(--bg); }
+*::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 220ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* Recharts overrides */
+.recharts-cartesian-axis-tick-value { fill: var(--ink-3) !important; font-size: 11px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line { stroke: var(--rule) !important; }
+.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: var(--rule) !important; }
+.recharts-tooltip-wrapper { outline: none; }
+.recharts-default-tooltip {
+  background: var(--card) !important;
+  border: 1px solid var(--rule-2) !important;
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  color: var(--ink) !important;
+  box-shadow: 0 8px 24px -8px rgba(0,0,0,0.2) !important;
+}
+.recharts-tooltip-label { color: var(--ink-3) !important; font-size: 10.5px !important; margin-bottom: 4px; }
