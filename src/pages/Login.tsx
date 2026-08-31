@@ -145,10 +145,22 @@ export default function Login() {
   const onSignIn = async () => {
     setLoading(true);
     setError(null);
+    // Belt-and-braces for browsers that leave `signInWithPopup` hanging when
+    // the popup is dismissed. Two safety nets:
+    //   1. If the user returns to this tab (focus) and no auth event follows
+    //      within 1.5s, reset the button.
+    //   2. Hard 45s timeout as a last resort.
+    let resetOnFocus: (() => void) | null = null;
+    let focusTimer = 0;
+    const hardKill = window.setTimeout(() => setLoading(false), 45_000);
+    resetOnFocus = () => {
+      window.clearTimeout(focusTimer);
+      focusTimer = window.setTimeout(() => setLoading(false), 1500);
+    };
+    window.addEventListener('focus', resetOnFocus);
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      // Popup dismissed by user is expected — swallow so the UI doesn't shout.
       const code = err?.code || '';
       const dismissed =
         code === 'auth/popup-closed-by-user' ||
@@ -156,6 +168,9 @@ export default function Login() {
         code === 'auth/user-cancelled';
       if (!dismissed) setError(err?.message || 'Failed to sign in.');
     } finally {
+      window.clearTimeout(hardKill);
+      window.clearTimeout(focusTimer);
+      if (resetOnFocus) window.removeEventListener('focus', resetOnFocus);
       setLoading(false);
     }
   };
