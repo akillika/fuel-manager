@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Fillup, Vehicle } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
@@ -59,9 +59,10 @@ export default function Calculator() {
     if (DEMO_MODE) { setAllFillups([...DEMO_FILLUPS]); setLoading(false); return; }
     try {
       setLoading(true);
-      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
+      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid)));
       const list: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); list.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
+      list.sort((a, b) => b.date.getTime() - a.date.getTime());
       setAllFillups(list);
     } finally { setLoading(false); }
   };
@@ -144,33 +145,38 @@ export default function Calculator() {
       </div>
 
       {/* Inputs */}
-      <div className="border border-rule rounded-lg bg-card p-4 md:p-5 mb-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
-        <div>
-          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-2">Distance</div>
-          <div className="flex items-baseline gap-2">
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={distance}
-              onChange={(e) => setDistance(e.target.value)}
-              placeholder="300"
-              className="!h-12 !text-3xl !font-semibold !tabular tracking-[-0.02em] !pl-4"
-            />
-            <span className="text-md text-ink3 font-mono tabular">km</span>
+      <div className="border border-rule rounded-lg bg-card mb-6">
+        <div className="flex flex-col md:flex-row md:items-stretch md:divide-x md:divide-rule">
+          <div className="flex-1 px-4 py-4 md:px-5">
+            <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">Distance</div>
+            <div className="flex items-baseline gap-2">
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={distance}
+                onChange={(e) => setDistance(e.target.value)}
+                placeholder="300"
+                className="!h-11 !text-xl !font-semibold !tabular tracking-[-0.015em] !pl-3"
+              />
+              <span className="text-sm text-ink3 font-mono tabular">km</span>
+            </div>
           </div>
-        </div>
-        <div>
-          <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-2">Using</div>
-          <div className="inline-flex bg-card2 border border-rule rounded-md p-0.5 h-12">
-            {(['latest', 'average', 'custom'] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setSource(s)}
-                className={cx('h-full px-4 rounded text-sm font-medium capitalize transition-colors', source === s ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink')}
-              >
-                {s}
-              </button>
-            ))}
+          <div className="px-4 py-4 md:px-5 md:flex md:flex-col md:justify-between">
+            <div className="text-2xs uppercase tracking-[0.1em] font-semibold text-ink3 mb-1.5">Using</div>
+            <div className="inline-flex self-start bg-card2 border border-rule rounded-md p-0.5 h-11">
+              {(['latest', 'average', 'custom'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSource(s)}
+                  className={cx(
+                    'h-full px-3.5 rounded text-sm font-medium capitalize transition-colors',
+                    source === s ? 'bg-card text-ink shadow-sm' : 'text-ink3 hover:text-ink',
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -182,7 +188,14 @@ export default function Calculator() {
           <div className="text-sm text-ink3">Add a vehicle to start estimating trip costs.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+        <div
+          className={cx(
+            'grid gap-3 mb-6',
+            vehicles.length === 1
+              ? 'grid-cols-1 max-w-[520px]'
+              : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3',
+          )}
+        >
           {results.map((r, i) => (
             <VehicleCostCard
               key={r.vs.vehicle.id}

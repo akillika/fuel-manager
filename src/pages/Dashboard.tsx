@@ -4,7 +4,7 @@ import { format, startOfMonth, endOfMonth, startOfYear, subMonths, differenceInD
 import { useAuth } from '../contexts/AuthContext';
 import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Fillup, FuelGoals, ServiceRecord } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS, DEMO_GOALS, DEMO_SERVICES } from '../config/demoData';
@@ -33,9 +33,10 @@ export default function Dashboard() {
     }
     try {
       setLoading(true);
-      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
+      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid)));
       const loaded: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); loaded.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
+      loaded.sort((a, b) => b.date.getTime() - a.date.getTime());
       setAllFillups(loaded);
       const svcSnap = await getDocs(query(collection(db, 'services'), where('userId', '==', user.uid)));
       const svc: ServiceRecord[] = [];
@@ -87,12 +88,21 @@ export default function Dashboard() {
   const monthSpend = sum(thisMonth.map(f => f.totalCost));
   const monthLastSpend = sum(lastMonth.map(f => f.totalCost));
 
-  // Distance this month: odometer max minus odometer min in month, plus carry from previous month if needed
+  // Distance driven in a given month = latest odometer in the month minus the last odometer recorded BEFORE the month started.
+  // Falls back to the earliest odometer of the month itself if there is no prior fill-up (first-ever month).
+  const priorOdoBefore = (cutoff: Date): number | null => {
+    let odo: number | null = null;
+    for (const f of asc) {
+      if (f.date < cutoff) odo = f.odometer;
+      else break;
+    }
+    return odo;
+  };
   const monthDistance = thisMonth.length >= 1
-    ? Math.max(0, thisMonth[thisMonth.length - 1].odometer - (asc.find(f => f.date < thisMonthStart)?.odometer ?? thisMonth[0].odometer))
+    ? Math.max(0, thisMonth[thisMonth.length - 1].odometer - (priorOdoBefore(thisMonthStart) ?? thisMonth[0].odometer))
     : 0;
   const monthLastDistance = lastMonth.length >= 1
-    ? Math.max(0, lastMonth[lastMonth.length - 1].odometer - (asc.find(f => f.date < lastMonthStart)?.odometer ?? lastMonth[0].odometer))
+    ? Math.max(0, lastMonth[lastMonth.length - 1].odometer - (priorOdoBefore(lastMonthStart) ?? lastMonth[0].odometer))
     : 0;
 
   // Avg mileage: from withStats entries with mileage computed

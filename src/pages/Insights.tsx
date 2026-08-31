@@ -3,7 +3,7 @@ import { format, startOfMonth } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Fillup } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
@@ -22,9 +22,10 @@ export default function Insights() {
     if (DEMO_MODE) { setAllFillups([...DEMO_FILLUPS]); setLoading(false); return; }
     try {
       setLoading(true);
-      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
+      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid)));
       const list: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); list.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
+      list.sort((a, b) => b.date.getTime() - a.date.getTime());
       setAllFillups(list);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };

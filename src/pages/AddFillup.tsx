@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -74,6 +74,21 @@ export default function AddFillup() {
     () => previousFillups.filter(f => f.vehicleId === vehicleId).sort((a, b) => a.date.getTime() - b.date.getTime()),
     [previousFillups, vehicleId],
   );
+
+  // Prior stations, sorted by how often the user has filled up there.
+  // Falls back to the full history if the current vehicle has none yet.
+  const stationOptions = useMemo(() => {
+    const scope = vehicleFillups.length ? vehicleFillups : previousFillups;
+    const counts = new Map<string, number>();
+    for (const f of scope) {
+      const name = f.station?.trim();
+      if (!name) continue;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name]) => name);
+  }, [vehicleFillups, previousFillups]);
 
   useEffect(() => {
     if (editId) return;
@@ -216,8 +231,8 @@ export default function AddFillup() {
     setOcrResult(null);
     setOcrError(null);
     try {
-      // Dynamic import so Tesseract.js is only downloaded when Scan receipt
-      // is actually tapped. Keeps the base bundle small.
+      // Dynamic import so the OCR module (and its network call) is only
+      // pulled in when Scan receipt is actually tapped.
       const mod = await import('../lib/receiptOcr');
       const res = await mod.ocrImage(f, (pct, stage) => setOcrProgress({ pct, stage }));
       setOcrResult(res);
@@ -369,7 +384,12 @@ export default function AddFillup() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Station (optional)">
-            <Input type="text" value={station} onChange={(e) => setStation(e.target.value)} placeholder="IOCL Anna Nagar" />
+            <StationCombobox
+              value={station}
+              onChange={setStation}
+              options={stationOptions}
+              placeholder="IOCL Anna Nagar"
+            />
           </Field>
           <div>
             <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-1.5">Fill type</div>
@@ -497,6 +517,134 @@ function ReadCell({ label, value }: { label: string; value: string }) {
     <div className="bg-card p-3">
       <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3">{label}</div>
       <div className="text-md font-semibold text-ink tabular mt-1">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * Typeahead combobox: an app-styled text input that shows a floating panel of
+ * matching prior stations as the user types. Free text is still accepted so
+ * a brand-new station name can be entered.
+ */
+function StationCombobox({
+  value, onChange, options, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return options.slice(0, 20);
+    return options
+      .filter(o => o.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const aStarts = a.toLowerCase().startsWith(q) ? 0 : 1;
+        const bStarts = b.toLowerCase().startsWith(q) ? 0 : 1;
+        return aStarts - bStarts;
+      })
+      .slice(0, 20);
+  }, [value, options]);
+
+  useEffect(() => { setActive(0); }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+    inputRef.current?.blur();
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setOpen(true);
+      setActive(a => Math.min(filtered.length - 1, a + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive(a => Math.max(0, a - 1));
+    } else if (e.key === 'Enter') {
+      if (open && filtered[active]) {
+        e.preventDefault();
+        pick(filtered[active]);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  const hasQuery = value.trim().length > 0;
+  const exact = hasQuery && options.some(o => o.toLowerCase() === value.trim().toLowerCase());
+  const showAddNew = hasQuery && !exact;
+
+  return (
+    <div ref={rootRef} className="relative">
+      <Input
+        ref={inputRef}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onKeyDown={onKey}
+        aria-expanded={open}
+        aria-autocomplete="list"
+        role="combobox"
+      />
+      {open && (filtered.length > 0 || showAddNew) && (
+        <div
+          className="absolute left-0 right-0 z-30 mt-1 rounded-md border border-rule2 bg-card shadow-[0_10px_30px_-10px_rgba(0,0,0,0.4)] overflow-hidden"
+          role="listbox"
+        >
+          <div className="max-h-56 overflow-y-auto py-1">
+            {filtered.map((name, i) => (
+              <button
+                key={name}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(name)}
+                className={cx(
+                  'w-full text-left px-3 py-1.5 text-sm flex items-center justify-between transition-colors',
+                  i === active ? 'bg-card2 text-ink' : 'text-ink2 hover:bg-card2',
+                )}
+                role="option"
+                aria-selected={i === active}
+              >
+                <span>{name}</span>
+                {i === active && <span className="text-2xs text-ink3 font-mono">↵</span>}
+              </button>
+            ))}
+            {showAddNew && (
+              <div
+                className={cx(
+                  'px-3 py-1.5 text-sm text-ink3 flex items-center justify-between',
+                  filtered.length > 0 ? 'border-t border-rule mt-1 pt-2' : '',
+                )}
+              >
+                <span>Use “<span className="text-ink font-medium">{value.trim()}</span>”</span>
+                <span className="text-2xs font-mono">new</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

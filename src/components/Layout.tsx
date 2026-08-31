@@ -9,6 +9,7 @@ const NAV = [
   { to: '/service', label: 'Service' },
   { to: '/calc',    label: 'Calculator' },
   { to: '/insights',label: 'Insights' },
+  { to: '/reports', label: 'Reports' },
   { to: '/vehicle', label: 'Vehicle' },
   { to: '/settings',label: 'Settings' },
 ] as const;
@@ -58,9 +59,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       <header className="border-b border-rule sticky top-0 z-30 bg-bg/90 backdrop-blur">
         <div className="max-w-page mx-auto flex items-center gap-2 px-4 md:px-6 h-14">
           {/* Brand */}
-          <Link to="/" className="inline-flex items-center gap-2 pr-4 mr-1 border-r border-rule h-6">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-ink text-bg text-2xs font-bold">F</span>
-            <span className="text-sm font-semibold text-ink tracking-[-0.005em]">Fuel</span>
+          <Link
+            to="/"
+            className="inline-flex items-center pr-4 mr-1 border-r border-rule h-6 font-semibold text-ink"
+            style={{ fontSize: 15, letterSpacing: '-0.028em' }}
+          >
+            FuelManager
           </Link>
 
           {/* Desktop nav */}

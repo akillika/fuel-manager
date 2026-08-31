@@ -35,7 +35,7 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (DEMO_MODE) {
       setVehicles(DEMO_VEHICLES);
-      if (!activeVehicleId && DEMO_VEHICLES.length) setActiveVehicleId(DEMO_VEHICLES[0].id);
+      setActiveVehicleId(current => (DEMO_VEHICLES.some(v => v.id === current) ? current : (DEMO_VEHICLES[0]?.id || '')));
       setLoading(false);
       return;
     }
@@ -45,7 +45,8 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
       const list: Vehicle[] = [];
       snap.forEach(d => { const data = d.data(); list.push({ id: d.id, ...data, createdAt: data.createdAt.toDate() } as Vehicle); });
       setVehicles(list);
-      if (!activeVehicleId && list.length) setActiveVehicleId(list[0].id);
+      // Reset active vehicle if it points to a vehicle that no longer exists (e.g. after import).
+      setActiveVehicleId(current => (list.some(v => v.id === current) ? current : (list[0]?.id || '')));
     } finally { setLoading(false); }
   };
 

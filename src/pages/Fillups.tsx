@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useVehicle } from '../contexts/VehicleContext';
 import { db } from '../config/firebase';
-import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { Fillup } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
@@ -35,9 +35,10 @@ export default function Fillups() {
     }
     try {
       setLoading(true);
-      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid), orderBy('date', 'desc')));
+      const snap = await getDocs(query(collection(db, 'fillups'), where('userId', '==', user.uid)));
       const loaded: Fillup[] = [];
       snap.forEach(d => { const data = d.data(); loaded.push({ id: d.id, ...data, date: data.date.toDate() } as Fillup); });
+      loaded.sort((a, b) => b.date.getTime() - a.date.getTime());
       setAllFillups(loaded);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };

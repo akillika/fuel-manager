@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Fillups from './pages/Fillups';
 import AddFillup from './pages/AddFillup';
 import Insights from './pages/Insights';
+import Reports from './pages/Reports';
 import Service from './pages/Service';
 import Vehicle from './pages/Vehicle';
 import Settings from './pages/Settings';
@@ -38,6 +39,7 @@ export default function App() {
                     <Route path="/add" element={<AddFillup />} />
                     <Route path="/service" element={<Service />} />
                     <Route path="/insights" element={<Insights />} />
+                    <Route path="/reports"  element={<Reports />} />
                     <Route path="/calc" element={<Calculator />} />
                     <Route path="/import" element={<Import />} />
                     <Route path="/vehicle" element={<Vehicle />} />

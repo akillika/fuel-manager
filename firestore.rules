@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+    function willBeOwner() {
+      return signedIn() && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /fillups/{id} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow update:       if isOwner(resource.data.userId) && willBeOwner();
+      allow create:       if willBeOwner();
+    }
+
+    match /vehicles/{id} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow update:       if isOwner(resource.data.userId) && willBeOwner();
+      allow create:       if willBeOwner();
+    }
+
+    match /services/{id} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow update:       if isOwner(resource.data.userId) && willBeOwner();
+      allow create:       if willBeOwner();
+    }
+
+    match /fuelGoals/{id} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow update:       if isOwner(resource.data.userId) && willBeOwner();
+      allow create:       if willBeOwner();
+    }
+  }
+}
