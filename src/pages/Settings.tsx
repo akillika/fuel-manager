@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { FuelGoals } from '../types';
 import { DEMO_MODE } from '../config/demo';
 import { DEMO_GOALS } from '../config/demoData';
-import { Card, Field, Input, Button } from '../components/ui';
+import { Card, Field, Input, Button, IconArrowRight } from '../components/ui';
 
 export default function Settings() {
   const { user } = useAuth();
@@ -90,6 +91,27 @@ export default function Settings() {
           <Button variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         </div>
       </Card>
+
+      {/* Data section */}
+      <div className="mt-8">
+        <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-3">Data</div>
+        <div className="grid grid-cols-1 gap-3">
+          <Link to="/import" className="border border-rule rounded-lg bg-card p-5 hover:border-rule2 transition-colors group flex items-center justify-between gap-4">
+            <div>
+              <div className="text-md font-semibold text-ink">Import from Fuelio</div>
+              <div className="text-xs text-ink3 mt-0.5">Paste or upload your Fuelio CSV export. Vehicles and fill-ups are previewed before anything is written.</div>
+            </div>
+            <IconArrowRight className="text-ink3 group-hover:text-ink transition-colors shrink-0" />
+          </Link>
+          <Link to="/fillups" className="border border-rule rounded-lg bg-card p-5 hover:border-rule2 transition-colors group flex items-center justify-between gap-4">
+            <div>
+              <div className="text-md font-semibold text-ink">Export</div>
+              <div className="text-xs text-ink3 mt-0.5">CSV of every fill-up, or a work-tagged expense report. Both buttons live in the Fill-ups toolbar.</div>
+            </div>
+            <IconArrowRight className="text-ink3 group-hover:text-ink transition-colors shrink-0" />
+          </Link>
+        </div>
+      </div>
 
       <p className="text-2xs text-ink3 mt-6">
         Data stored under your Google account in Firestore. Nothing shared.
