@@ -9,6 +9,8 @@ import { DEMO_MODE } from '../config/demo';
 import { DEMO_FILLUPS } from '../config/demoData';
 import { Button, Input, Field, Textarea, IconClose, cx } from '../components/ui';
 import { useVehicle } from '../contexts/VehicleContext';
+// Type-only import - doesn't ship anything at runtime.
+import type { ReceiptExtract } from '../lib/receiptOcr';
 
 /**
  * Parses a bank / UPI style SMS and extracts what it can.
@@ -48,6 +50,10 @@ export default function AddFillup() {
   const [tag, setTag] = useState<'personal' | 'work'>('personal');
   const [saving, setSaving] = useState(false);
   const [showSms, setShowSms] = useState(false);
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<{ pct: number; stage: string } | null>(null);
+  const [ocrResult, setOcrResult] = useState<ReceiptExtract | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const [smsText, setSmsText] = useState('');
 
   useEffect(() => { setVehicleId(activeVehicleId); }, [activeVehicleId]);
@@ -203,6 +209,36 @@ export default function AddFillup() {
     setShowSms(false);
   };
 
+  const handleReceiptFile = async (f: File | null) => {
+    if (!f) return;
+    setOcrOpen(true);
+    setOcrProgress({ pct: 0, stage: 'loading' });
+    setOcrResult(null);
+    setOcrError(null);
+    try {
+      // Dynamic import so Tesseract.js is only downloaded when Scan receipt
+      // is actually tapped. Keeps the base bundle small.
+      const mod = await import('../lib/receiptOcr');
+      const res = await mod.ocrImage(f, (pct, stage) => setOcrProgress({ pct, stage }));
+      setOcrResult(res);
+    } catch (e: any) {
+      setOcrError(e?.message || 'OCR failed');
+    } finally {
+      setOcrProgress(null);
+    }
+  };
+
+  const applyOcr = () => {
+    if (!ocrResult) return;
+    if (ocrResult.volume) { setVolume(ocrResult.volume.toFixed(2)); setLastEdited('volume'); }
+    if (ocrResult.pricePerLitre) { setPricePerLitre(ocrResult.pricePerLitre.toFixed(2)); setLastEdited('price'); }
+    if (ocrResult.total) { setTotal(ocrResult.total.toFixed(2)); setLastEdited('total'); }
+    if (ocrResult.station && !station) setStation(ocrResult.station);
+    if (ocrResult.fuelGrade && !fuelGrade) setFuelGrade(ocrResult.fuelGrade);
+    setOcrOpen(false);
+    setOcrResult(null);
+  };
+
   return (
     <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-6 md:py-10 rise pb-32 md:pb-6">
       <div className="flex items-baseline justify-between mb-6 md:mb-8">
@@ -243,14 +279,24 @@ export default function AddFillup() {
         </div>
       )}
 
-      {/* SMS parser */}
-      <div className="mb-5">
+      {/* Auto-fill helpers */}
+      <div className="mb-5 flex items-center gap-4 flex-wrap">
+        <label className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-ink text-bg text-sm font-medium cursor-pointer hover:opacity-90 transition-opacity">
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handleReceiptFile(e.target.files?.[0] || null)}
+          />
+          Scan receipt
+        </label>
         <button
           type="button"
           onClick={() => setShowSms(v => !v)}
           className="text-xs text-ink3 hover:text-ink underline underline-offset-2 decoration-dotted"
         >
-          {showSms ? 'Hide SMS import' : 'Paste bank/UPI SMS to auto-fill'}
+          {showSms ? 'Hide SMS import' : 'or paste bank SMS'}
         </button>
         {showSms && (
           <div className="mt-2 border border-rule rounded-md bg-card p-3">
@@ -370,6 +416,68 @@ export default function AddFillup() {
           )}
         </button>
       </div>
+
+      {/* OCR modal */}
+      {ocrOpen && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { if (!ocrProgress) { setOcrOpen(false); setOcrResult(null); setOcrError(null); } }} />
+          <div className="relative bg-card border-t md:border border-rule rounded-t-lg md:rounded-lg shadow-popover w-full md:max-w-lg md:w-full max-h-[92vh] overflow-hidden flex flex-col rise" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="md:hidden mx-auto mt-2 mb-1 w-10 h-1 rounded-full bg-rule2" />
+            <div className="flex items-center justify-between p-4 border-b border-rule">
+              <h3 className="text-md font-semibold text-ink">Scan receipt</h3>
+              {!ocrProgress && <button onClick={() => { setOcrOpen(false); setOcrResult(null); setOcrError(null); }} className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink3 hover:text-ink hover:bg-card2 transition-colors"><IconClose /></button>}
+            </div>
+            <div className="p-5 overflow-y-auto">
+              {ocrProgress ? (
+                <div>
+                  <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">{ocrProgress.stage || 'Working'}</div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-ink tabular tracking-[-0.02em]">{ocrProgress.pct}%</span>
+                    <span className="text-sm text-ink3 font-mono tabular">reading receipt</span>
+                  </div>
+                  <div className="mt-4 h-1 bg-card2 rounded-full overflow-hidden">
+                    <div className="h-full bg-ink transition-[width] duration-200" style={{ width: `${ocrProgress.pct}%` }} />
+                  </div>
+                  <p className="mt-4 text-xs text-ink3">
+                    First run downloads ~4 MB of the OCR model. Later scans are instant.
+                  </p>
+                </div>
+              ) : ocrError ? (
+                <div>
+                  <div className="text-md font-semibold text-down mb-2">Scan failed</div>
+                  <div className="text-sm text-ink3">{ocrError}</div>
+                </div>
+              ) : ocrResult ? (
+                <div>
+                  <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3 mb-2">Detected values</div>
+                  <div className="grid grid-cols-3 gap-px bg-rule border border-rule rounded-md overflow-hidden mb-4">
+                    <ReadCell label="Volume" value={ocrResult.volume ? `${ocrResult.volume.toFixed(2)} L` : '—'} />
+                    <ReadCell label="Rs/L"   value={ocrResult.pricePerLitre ? `Rs ${ocrResult.pricePerLitre.toFixed(2)}` : '—'} />
+                    <ReadCell label="Total"  value={ocrResult.total ? `Rs ${ocrResult.total.toFixed(0)}` : '—'} />
+                  </div>
+                  {(ocrResult.station || ocrResult.fuelGrade) && (
+                    <div className="text-xs text-ink3 tabular mb-4">
+                      {ocrResult.station && <>Station <span className="text-ink font-mono">{ocrResult.station}</span></>}
+                      {ocrResult.station && ocrResult.fuelGrade && ' · '}
+                      {ocrResult.fuelGrade && <>Grade <span className="text-ink font-mono">{ocrResult.fuelGrade}</span></>}
+                    </div>
+                  )}
+                  <details className="text-xs text-ink3">
+                    <summary className="cursor-pointer hover:text-ink">See raw text (confidence {Math.round(ocrResult.confidence)}%)</summary>
+                    <pre className="mt-2 p-3 bg-card2 rounded-md text-2xs font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{ocrResult.rawText || '(empty)'}</pre>
+                  </details>
+                </div>
+              ) : null}
+            </div>
+            {!ocrProgress && ocrResult && (
+              <div className="flex items-center justify-end gap-2 p-4 border-t border-rule">
+                <Button onClick={() => { setOcrOpen(false); setOcrResult(null); }}>Cancel</Button>
+                <Button variant="primary" onClick={applyOcr}>Apply to form</Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -380,6 +488,15 @@ function SummaryStat({ label, value, sub }: { label: string; value: string; sub:
       <div className="text-2xs uppercase tracking-[0.08em] font-semibold text-ink3">{label}</div>
       <div className="text-xl md:text-2xl font-semibold text-ink tabular tracking-[-0.02em] mt-1">{value}</div>
       <div className="text-2xs text-ink3 mt-0.5 tabular truncate">{sub}</div>
+    </div>
+  );
+}
+
+function ReadCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-card p-3">
+      <div className="text-2xs uppercase tracking-[0.06em] font-semibold text-ink3">{label}</div>
+      <div className="text-md font-semibold text-ink tabular mt-1">{value}</div>
     </div>
   );
 }
